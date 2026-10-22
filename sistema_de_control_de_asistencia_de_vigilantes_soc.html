@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOC Guards - Control de Asistencia y Vigilancia</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        soc: {
+                            50: '#f0f4f8',
+                            100: '#d9e2ec',
+                            500: '#334e68',
+                            800: '#102a43',
+                            900: '#0b1b2b',
+                            950: '#06101a',
+                            accent: '#00d1b2',
+                            warning: '#ffdd57',
+                            danger: '#f14668'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Leaflet CSS & JS (para Mapa Real de Geolocalización) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334e68;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #00d1b2;
+        }
+        .pulse-live {
+            box-shadow: 0 0 0 0 rgba(0, 209, 178, 0.7);
+            animation: pulse-green 2s infinite;
+        }
+        @keyframes pulse-green {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 209, 178, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(0, 209, 178, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 209, 178, 0); }
+        }
+    </style>
+</head>
+<body class="bg-soc-950 text-slate-100 min-h-screen flex flex-col antialiased selection:bg-soc-accent selection:text-soc-950">
+
+    <!-- Header / Navbar Principal -->
+    <header class="bg-soc-900 border-b border-slate-800 sticky top-0 z-40 backdrop-blur-md bg-opacity-90">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-emerald-400 flex items-center justify-center text-slate-950 font-black text-xl shadow-lg shadow-cyan-500/20">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-none tracking-wide text-white flex items-center gap-2">
+                        SOC GUARDIAN <span class="text-xs font-semibold px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">v2.5 PRO</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">Control de Asistencia & Evidencia en Tiempo Real</p>
+                </div>
+            </div>
+
+            <!-- Menú de Navegación Movil/Desktop -->
+            <div class="flex items-center gap-2 sm:gap-4">
+                <!-- Reloj Digital Header -->
+                <div class="hidden md:flex flex-col items-end border-r border-slate-800 pr-4">
+                    <span id="liveClock" class="font-mono text-sm font-bold text-cyan-400 tracking-wider">00:00:00 AM</span>
+                    <span id="liveDate" class="text-xs text-slate-400">Cargando fecha...</span>
+                </div>
+
+                <!-- Tabs de Navegación -->
+                <nav class="flex bg-soc-950 p-1 rounded-xl border border-slate-800">
+                    <button id="tabFichajeBtn" onclick="switchTab('fichaje')" class="px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 flex items-center gap-2 bg-cyan-500 text-slate-950 shadow-md font-semibold">
+                        <i class="fa-solid fa-camera"></i>
+                        <span>Fichaje</span>
+                    </button>
+                    <button id="tabDashboardBtn" onclick="switchTab('dashboard')" class="px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium text-slate-400 hover:text-white transition-all duration-200 flex items-center gap-2">
+                        <i class="fa-solid fa-chart-line"></i>
+                        <span>Dashboard</span>
+                    </button>
+                    <button id="tabConfigBtn" onclick="switchTab('config')" class="px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium text-slate-400 hover:text-white transition-all duration-200 flex items-center gap-2">
+                        <i class="fa-solid fa-sliders"></i>
+                        <span class="hidden sm:inline">Ajustes</span>
+                    </button>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- Contenido Principal -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+
+        <!-- ================= MÓDULO 1: FICHAJE (REGISTRO ASISTENCIA) ================= -->
+        <section id="secFichaje" class="space-y-6">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+                <!-- Columna Izquierda: Formulario de Datos y Geolocalización -->
+                <div class="lg:col-span-5 space-y-6">
+                    <div class="bg-soc-900 rounded-2xl p-5 border border-slate-800 shadow-xl space-y-5">
+                        <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                            <h2 class="text-base font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-id-badge text-cyan-400"></i> Datos del Servicio
+                            </h2>
+                            <span class="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> GPS Listo
+                            </span>
+                        </div>
+
+                        <!-- Selección de Vigilante -->
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1.5">Vigilante de Seguridad *</label>
+                            <div class="relative">
+                                <select id="guardSelect" onchange="onGuardSelectChange()" class="w-full bg-soc-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 appearance-none">
+                                    <option value="">-- Seleccionar Vigilante --</option>
+                                </select>
+                                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
+                                    <i class="fa-solid fa-chevron-down text-xs"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Punto de Control / Sede -->
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1.5">Punto / Sede Asignada *</label>
+                            <div class="relative">
+                                <select id="siteSelect" class="w-full bg-soc-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 appearance-none">
+                                    <!-- Dinámico desde JS -->
+                                </select>
+                                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
+                                    <i class="fa-solid fa-building text-xs"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tipo de Evento (Entrada/Salida) y Turno -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1.5">Acción</label>
+                                <div class="grid grid-cols-2 gap-1 bg-soc-950 p-1 rounded-xl border border-slate-800">
+                                    <button type="button" id="btnTypeEntry" onclick="setEventType('ENTRADA')" class="py-1.5 rounded-lg text-xs font-bold transition-all bg-cyan-500 text-slate-950 shadow">
+                                        ENTRADA
+                                    </button>
+                                    <button type="button" id="btnTypeExit" onclick="setEventType('SALIDA')" class="py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all">
+                                        SALIDA
+                                    </button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1.5">Turno Asignado</label>
+                                <select id="shiftSelect" onchange="calculatePunctualityPreview()" class="w-full bg-soc-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500">
+                                    <option value="MAÑANA">Mañana (07:00 AM)</option>
+                                    <option value="TARDE">Tarde (15:00 PM)</option>
+                                    <option value="NOCHE">Noche (23:00 PM)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Indicador en Vivo de Estado de Puntualidad (Preview) -->
+                        <div id="punctualityPreview" class="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div id="punctualityBadgeIcon" class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                                    <i class="fa-solid fa-clock"></i>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-slate-400">Estimación de Puntualidad</p>
+                                    <p id="punctualityStatusText" class="text-xs font-bold text-emerald-400">DENTRO DEL HORARIO</p>
+                                </div>
+                            </div>
+                            <span id="punctualityDelayMinutes" class="text-xs font-mono bg-slate-800 px-2 py-1 rounded text-slate-300">+0 min atraso</span>
+                        </div>
+
+                        <!-- Mapa Interactivo de Ubicación Actual -->
+                        <div>
+                            <div class="flex justify-between items-center mb-1.5">
+                                <label class="text-xs font-medium text-slate-300 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-location-dot text-rose-500"></i> Ubicación GPS Detectada
+                                </label>
+                                <button type="button" onclick="refreshGeolocation()" class="text-xs text-cyan-400 hover:underline flex items-center gap-1">
+                                    <i class="fa-solid fa-rotate-right"></i> Recargar GPS
+                                </button>
+                            </div>
+                            <div id="mapContainer" class="h-36 rounded-xl border border-slate-800 bg-soc-950 overflow-hidden relative">
+                                <!-- Leaflet map instance aquí -->
+                            </div>
+                            <p id="geoCoordsText" class="text-[11px] font-mono text-slate-400 mt-1 text-right">Obteniendo coordenadas...</p>
+                        </div>
+
+                        <!-- Observaciones / Notas Adicionales -->
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Observación o Incidencia (Opcional)</label>
+                            <input type="text" id="recordNotes" placeholder="Ej: Relevo en puerta norte sin novedades" class="w-full bg-soc-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Columna Derecha: Captura de Foto Evidencia / Webcam y Acciones -->
+                <div class="lg:col-span-7 space-y-6">
+                    <div class="bg-soc-900 rounded-2xl p-5 border border-slate-800 shadow-xl flex flex-col justify-between h-full space-y-4">
+                        <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                            <h2 class="text-base font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-camera-retro text-cyan-400"></i> Evidencia Fotográfica
+                            </h2>
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="switchCameraSource()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg border border-slate-700 transition-all flex items-center gap-1">
+                                    <i class="fa-solid fa-arrows-rotate"></i> Cambiar Cámara
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Viewport de Video / Foto Capturada -->
+                        <div class="relative bg-black rounded-2xl overflow-hidden border-2 border-dashed border-slate-800 min-h-[300px] flex items-center justify-center group">
+                            <!-- Stream Live Video -->
+                            <video id="webcamVideo" autoplay playsinline class="w-full h-full max-h-[380px] object-cover"></video>
+
+                            <!-- Canvas Oculto para Generar Foto con Marca de Agua -->
+                            <canvas id="photoCanvas" class="hidden"></canvas>
+
+                            <!-- Preview de Foto Tomada -->
+                            <img id="photoPreview" class="hidden w-full h-full max-h-[380px] object-cover" alt="Vista previa de foto">
+
+                            <!-- HUD de Seguridad Superpuesto sobre Cámara -->
+                            <div id="cameraHud" class="absolute inset-0 pointer-events-none p-4 flex flex-col justify-between border-1 border-cyan-500/20">
+                                <div class="flex justify-between items-start">
+                                    <div class="bg-slate-950/80 backdrop-blur border border-slate-700/80 rounded-lg px-2.5 py-1 text-[11px] font-mono text-cyan-400 flex items-center gap-2">
+                                        <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span> REC LIVE SOC
+                                    </div>
+                                    <div class="bg-slate-950/80 backdrop-blur border border-slate-700/80 rounded-lg px-2.5 py-1 text-[11px] font-mono text-slate-300">
+                                        <i class="fa-solid fa-crosshairs text-cyan-400"></i> FACE DETECTED
+                                    </div>
+                                </div>
+
+                                <!-- Retícula de Enfoque -->
+                                <div class="self-center w-48 h-48 border border-dashed border-cyan-400/40 rounded-full flex items-center justify-center">
+                                    <div class="w-2 h-2 bg-cyan-400/60 rounded-full"></div>
+                                </div>
+
+                                <div class="bg-slate-950/80 backdrop-blur border border-slate-700/80 rounded-lg p-2 text-[11px] font-mono text-slate-300 flex justify-between items-center">
+                                    <span id="hudTimestamp">2026-10-21 --:--:--</span>
+                                    <span id="hudLocation">GPS: Validando...</span>
+                                </div>
+                            </div>
+
+                            <!-- Overlay cuando no hay permisos/cam -->
+                            <div id="cameraFallbackMsg" class="hidden absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center space-y-3">
+                                <div class="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 text-xl">
+                                    <i class="fa-solid fa-video-slash"></i>
+                                </div>
+                                <p class="text-xs text-slate-300">Cámara no detectada o permisos denegados.</p>
+                                <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 font-medium px-4 py-2 rounded-xl text-xs transition-all flex items-center gap-2">
+                                    <i class="fa-solid fa-upload"></i> Subir foto de respaldo
+                                    <input type="file" id="fallbackFileInput" accept="image/*" class="hidden" onchange="handleFallbackImageUpload(event)">
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Controles de Fotografía y Fichaje Principal -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                            <button type="button" id="btnSnapPhoto" onclick="takeSnapshot()" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 px-4 rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-2 active:scale-95">
+                                <i class="fa-solid fa-camera text-cyan-400"></i> Capturar Foto
+                            </button>
+
+                            <button type="button" id="btnRetakePhoto" onclick="resetPhotoCapture()" class="hidden w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-3 px-4 rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-rotate-left"></i> Volver a Tomar
+                            </button>
+
+                            <button type="button" id="btnSubmitAttendance" onclick="submitAttendanceRecord()" class="w-full sm:col-span-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black py-3 px-4 rounded-xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 disabled:pointer-events-none">
+                                <i class="fa-solid fa-check-double text-lg"></i> REGISTRAR FICHAJE
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+
+        <!-- ================= MÓDULO 2: DASHBOARD ADMINISTRATIVO ================= -->
+        <section id="secDashboard" class="hidden space-y-6">
+
+            <!-- KPIs Superiores de Estadísticas -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-soc-900 rounded-2xl p-4 border border-slate-800 shadow-md">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-xs font-medium text-slate-400">Total Fichajes Hoy</p>
+                            <h3 id="kpiTotalCount" class="text-2xl font-black text-white mt-1">0</h3>
+                        </div>
+                        <div class="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-clipboard-user"></i>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-slate-500 mt-2">Registrados en el sistema</p>
+                </div>
+
+                <div class="bg-soc-900 rounded-2xl p-4 border border-slate-800 shadow-md">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-xs font-medium text-slate-400">Puntuales</p>
+                            <h3 id="kpiOnTimeCount" class="text-2xl font-black text-emerald-400 mt-1">0</h3>
+                        </div>
+                        <div class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-circle-check"></i>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-emerald-500/80 mt-2">A tiempo o con tolerancia</p>
+                </div>
+
+                <div class="bg-soc-900 rounded-2xl p-4 border border-slate-800 shadow-md">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-xs font-medium text-slate-400">Atrasos Leves</p>
+                            <h3 id="kpiLateMildCount" class="text-2xl font-black text-amber-400 mt-1">0</h3>
+                        </div>
+                        <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-amber-500/80 mt-2">Atrasos de 1 a 15 min</p>
+                </div>
+
+                <div class="bg-soc-900 rounded-2xl p-4 border border-slate-800 shadow-md">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-xs font-medium text-slate-400">Atrasos Severos</p>
+                            <h3 id="kpiLateSevereCount" class="text-2xl font-black text-rose-500 mt-1">0</h3>
+                        </div>
+                        <div class="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-circle-xmark"></i>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-rose-500/80 mt-2">Mayores a 15 min atraso</p>
+                </div>
+            </div>
+
+            <!-- Gráficos y Visualización de Métricas -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Gráfico Tasa Puntualidad -->
+                <div class="bg-soc-900 rounded-2xl p-5 border border-slate-800 shadow-xl flex flex-col justify-between">
+                    <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-chart-pie text-cyan-400"></i> Distribución de Puntualidad
+                    </h3>
+                    <div class="relative flex-1 flex items-center justify-center min-h-[200px]">
+                        <canvas id="punctualityChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Gráfico de Fichajes por Punto / Sede -->
+                <div class="lg:col-span-2 bg-soc-900 rounded-2xl p-5 border border-slate-800 shadow-xl flex flex-col justify-between">
+                    <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-chart-column text-cyan-400"></i> Asistencia por Punto de Control / Sede
+                    </h3>
+                    <div class="relative flex-1 min-h-[200px]">
+                        <canvas id="siteChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Barra de Herramientas, Filtros y Exportación -->
+            <div class="bg-soc-900 rounded-2xl p-4 border border-slate-800 flex flex-col md:flex-row gap-4 justify-between items-center">
+                <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                    <!-- Búsqueda por Texto -->
+                    <div class="relative flex-1 md:w-60">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-500"></i>
+                        <input type="text" id="filterSearchInput" oninput="applyDashboardFilters()" placeholder="Buscar vigilante..." class="w-full bg-soc-950 border border-slate-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500">
+                    </div>
+
+                    <!-- Filtro por Estado -->
+                    <select id="filterStatusSelect" onchange="applyDashboardFilters()" class="bg-soc-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500">
+                        <option value="ALL">Todos los Estados</option>
+                        <option value="A tiempo">A tiempo</option>
+                        <option value="Atraso leve">Atraso leve</option>
+                        <option value="Atraso severo">Atraso severo</option>
+                    </select>
+
+                    <!-- Filtro por Punto -->
+                    <select id="filterSiteSelect" onchange="applyDashboardFilters()" class="bg-soc-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500">
+                        <option value="ALL">Todas las Sedes</option>
+                    </select>
+                </div>
+
+                <div class="flex items-center gap-2 w-full md:w-auto justify-end">
+                    <button onclick="exportDataCSV()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2">
+                        <i class="fa-solid fa-file-csv text-emerald-400"></i> Exportar CSV
+                    </button>
+                    <button onclick="clearAllDataPrompt()" class="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5">
+                        <i class="fa-solid fa-trash-can"></i> Limpiar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tabla de Registros y Evidencias -->
+            <div class="bg-soc-900 rounded-2xl border border-slate-800 shadow-xl overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs text-slate-300">
+                        <thead class="bg-soc-950 text-slate-400 uppercase font-mono border-b border-slate-800">
+                            <tr>
+                                <th class="p-3.5">Evidencia</th>
+                                <th class="p-3.5">Vigilante / Código</th>
+                                <th class="p-3.5">Sede / Punto</th>
+                                <th class="p-3.5">Hora / Accion</th>
+                                <th class="p-3.5">Puntualidad</th>
+                                <th class="p-3.5">Ubicación GPS</th>
+                                <th class="p-3.5 text-right">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="attendanceTableBody" class="divide-y divide-slate-800/60">
+                            <!-- Filas dinámicas -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="emptyTableMsg" class="p-8 text-center text-slate-500 hidden">
+                    <i class="fa-solid fa-folder-open text-3xl mb-2 block"></i>
+                    No se encontraron registros de asistencia correspondientes.
+                </div>
+            </div>
+
+        </section>
+
+
+        <!-- ================= MÓDULO 3: CONFIGURACIÓN Y PARÁMETROS ================= -->
+        <section id="secConfig" class="hidden max-w-3xl mx-auto space-y-6">
+            <div class="bg-soc-900 rounded-2xl p-6 border border-slate-800 shadow-xl space-y-6">
+                <div class="border-b border-slate-800 pb-3 flex justify-between items-center">
+                    <h2 class="text-base font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-sliders text-cyan-400"></i> Parámetros de Operación del SOC
+                    </h2>
+                    <span class="text-xs text-slate-400">Ajusta reglas de tolerancia y sedes</span>
+                </div>
+
+                <!-- Configuración de Horarios de Turnos -->
+                <div class="space-y-4">
+                    <h3 class="text-xs font-bold text-cyan-400 uppercase tracking-wider">Horarios de Entrada por Turno</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">Turno Mañana</label>
+                            <input type="time" id="cfgShiftMorning" value="07:00" class="w-full bg-soc-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">Turno Tarde</label>
+                            <input type="time" id="cfgShiftAfternoon" value="15:00" class="w-full bg-soc-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">Turno Noche</label>
+                            <input type="time" id="cfgShiftNight" value="23:00" class="w-full bg-soc-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tolerancias y Umbrales -->
+                <div class="space-y-4 pt-2 border-t border-slate-800">
+                    <h3 class="text-xs font-bold text-cyan-400 uppercase tracking-wider">Márgenes de Tolerancia</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">Minutos de Tolerancia (A tiempo)</label>
+                            <input type="number" id="cfgToleranceMinutes" value="10" min="0" max="60" class="w-full bg-soc-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                            <p class="text-[10px] text-slate-500 mt-1">Llegar hasta X min tarde se considera "A tiempo".</p>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">Umbral de Atraso Severo (Minutos)</label>
+                            <input type="number" id="cfgSevereThresholdMinutes" value="25" min="5" max="120" class="w-full bg-soc-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                            <p class="text-[10px] text-slate-500 mt-1">Superado este límite pasa a ser "Atraso Severo".</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t border-slate-800 flex justify-end">
+                    <button onclick="saveConfiguration()" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-5 py-2.5 rounded-xl text-xs transition-all flex items-center gap-2 shadow-lg shadow-cyan-500/20">
+                        <i class="fa-solid fa-floppy-disk"></i> Guardar Ajustes
+                    </button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Modal de Detalle / Evidencia Completa -->
+    <div id="evidenceModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-soc-900 border border-slate-800 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl space-y-4 p-5 animate-in fade-in zoom-in-95 duration-200">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                <h3 class="font-bold text-white text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-shield-check text-cyan-400"></i> Reporte Oficial de Fichaje SOC
+                </h3>
+                <button onclick="closeEvidenceModal()" class="text-slate-400 hover:text-white text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- Imagen HD -->
+            <div class="rounded-xl overflow-hidden border border-slate-800 bg-black relative">
+                <img id="modalImage" src="" class="w-full max-h-[300px] object-contain" alt="Evidencia">
+                <span id="modalPunctualityBadge" class="absolute top-3 right-3 px-2.5 py-1 rounded-full text-xs font-bold uppercase shadow">
+                    -
+                </span>
+            </div>
+
+            <!-- Detalles en Grid -->
+            <div class="grid grid-cols-2 gap-3 text-xs bg-soc-950 p-3 rounded-xl border border-slate-800/80">
+                <div>
+                    <span class="text-slate-500 block">Vigilante:</span>
+                    <strong id="modalGuardName" class="text-white text-sm">--</strong>
+                </div>
+                <div>
+                    <span class="text-slate-500 block">Código Guard:</span>
+                    <strong id="modalGuardCode" class="text-cyan-400 font-mono">--</strong>
+                </div>
+                <div>
+                    <span class="text-slate-500 block">Punto / Sede:</span>
+                    <strong id="modalSite" class="text-slate-200">--</strong>
+                </div>
+                <div>
+                    <span class="text-slate-500 block">Fecha & Hora Exacta:</span>
+                    <strong id="modalTimestamp" class="text-slate-200 font-mono">--</strong>
+                </div>
+                <div>
+                    <span class="text-slate-500 block">Acción & Turno:</span>
+                    <strong id="modalAction" class="text-slate-200">--</strong>
+                </div>
+                <div>
+                    <span class="text-slate-500 block">Coordenadas GPS:</span>
+                    <strong id="modalGeo" class="text-slate-300 font-mono text-[11px]">--</strong>
+                </div>
+            </div>
+
+            <div id="modalNotesContainer" class="bg-slate-900 p-2.5 rounded-xl border border-slate-800 text-xs">
+                <span class="text-slate-400 font-semibold block mb-0.5">Observación:</span>
+                <p id="modalNotesText" class="text-slate-300 italic">Sin observaciones.</p>
+            </div>
+
+            <div class="flex justify-end pt-2">
+                <button onclick="closeEvidenceModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-4 py-2 rounded-xl text-xs transition-all">
+                    Cerrar Detalle
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Toast de Notificaciones Flotantes -->
+    <div id="toastNotification" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
+        <div id="toastContent" class="bg-slate-900 border border-slate-700 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 text-xs font-medium">
+            <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-base"></i>
+            <span id="toastMessage">Operación realizada con éxito</span>
+        </div>
+    </div>
+
+
+    <!-- SCRIPT PRINCIPAL DE LÓGICA & FUNCIONALIDAD -->
+    <script>
+        // ================= ESTADO GLOBAL Y DATOS MOCK INITIALES =================
+        const DEFAULT_GUARDS = [
+            { code: "VIG-101", name: "Carlos Mamani Flores", site: "Planta Industrial - Viacha" },
+            { code: "VIG-102", name: "Roberto Quispe Condori", site: "Centro Operativo - La Paz" },
+            { code: "VIG-103", name: "Jorge Mendoza Justiniano", site: "Almacén Central - Santa Cruz" },
+            { code: "VIG-104", name: "Luis Fernandez Ugarte", site: "Edificio Corporativo - Cochabamba" },
+            { code: "VIG-105", name: "Mario Vargas Llosa", site: "Planta Industrial - Viacha" }
+        ];
+
+        const DEFAULT_SITES = [
+            "Planta Industrial - Viacha",
+            "Centro Operativo - La Paz",
+            "Almacén Central - Santa Cruz",
+            "Edificio Corporativo - Cochabamba",
+            "Mina San Cristóbal - Potosí"
+        ];
+
+        let config = {
+            shiftMorning: "07:00",
+            shiftAfternoon: "15:00",
+            shiftNight: "23:00",
+            toleranceMinutes: 10,
+            severeThresholdMinutes: 25
+        };
+
+        let attendanceRecords = [];
+        let currentEventType = 'ENTRADA';
+        let capturedPhotoBase64 = null;
+        let mapInstance = null;
+        let mapMarker = null;
+        let currentCoords = { lat: -16.6528, lng: -68.3006, label: "Viacha, La Paz (Simulado)" }; // Default coords
+        let mediaStream = null;
+        let chartPunctuality = null;
+        let chartSite = null;
+
+        // ================= INICIALIZACIÓN DE LA APP =================
+        window.addEventListener('DOMContentLoaded', () => {
+            loadStoredData();
+            initClock();
+            populateSelects();
+            initLeafletMap();
+            initWebcam();
+            calculatePunctualityPreview();
+            renderDashboard();
+        });
+
+        // Cargar datos guardados en LocalStorage
+        function loadStoredData() {
+            const storedRecords = localStorage.getItem('soc_attendance_records');
+            if (storedRecords) {
+                attendanceRecords = JSON.parse(storedRecords);
+            } else {
+                // Generar un par de registros demo si está vacío
+                generateMockRecords();
+            }
+
+            const storedConfig = localStorage.getItem('soc_config');
+            if (storedConfig) {
+                config = JSON.parse(storedConfig);
+                document.getElementById('cfgShiftMorning').value = config.shiftMorning;
+                document.getElementById('cfgShiftAfternoon').value = config.shiftAfternoon;
+                document.getElementById('cfgShiftNight').value = config.shiftNight;
+                document.getElementById('cfgToleranceMinutes').value = config.toleranceMinutes;
+                document.getElementById('cfgSevereThresholdMinutes').value = config.severeThresholdMinutes;
+            }
+        }
+
+        function saveRecordsToStorage() {
+            localStorage.setItem('soc_attendance_records', JSON.stringify(attendanceRecords));
+        }
+
+        // Reloj digital en vivo
+        function initClock() {
+            function update() {
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('es-BO', { hour12: true });
+                const dateStr = now.toLocaleDateString('es-BO', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+                
+                document.getElementById('liveClock').textContent = timeStr;
+                document.getElementById('liveDate').textContent = dateStr;
+                document.getElementById('hudTimestamp').textContent = `${now.toISOString().split('T')[0]} ${timeStr}`;
+            }
+            update();
+            setInterval(update, 1000);
+        }
+
+        // Llenar Selects de Vigilantes y Sedes
+        function populateSelects() {
+            const guardSelect = document.getElementById('guardSelect');
+            guardSelect.innerHTML = '<option value="">-- Seleccionar Vigilante --</option>';
+            DEFAULT_GUARDS.forEach(g => {
+                const opt = document.createElement('option');
+                opt.value = g.code;
+                opt.textContent = `[${g.code}] ${g.name}`;
+                guardSelect.appendChild(opt);
+            });
+
+            const siteSelect = document.getElementById('siteSelect');
+            const filterSiteSelect = document.getElementById('filterSiteSelect');
+            siteSelect.innerHTML = '';
+            filterSiteSelect.innerHTML = '<option value="ALL">Todas las Sedes</option>';
+
+            DEFAULT_SITES.forEach(s => {
+                const opt1 = document.createElement('option');
+                opt1.value = s;
+                opt1.textContent = s;
+                siteSelect.appendChild(opt1);
+
+                const opt2 = document.createElement('option');
+                opt2.value = s;
+                opt2.textContent = s;
+                filterSiteSelect.appendChild(opt2);
+            });
+        }
+
+        function onGuardSelectChange() {
+            const selectedCode = document.getElementById('guardSelect').value;
+            const guard = DEFAULT_GUARDS.find(g => g.code === selectedCode);
+            if (guard) {
+                document.getElementById('siteSelect').value = guard.site;
+            }
+            calculatePunctualityPreview();
+        }
+
+        // Cambiar entre Pestañas
+        function switchTab(tab) {
+            document.getElementById('secFichaje').classList.add('hidden');
+            document.getElementById('secDashboard').classList.add('hidden');
+            document.getElementById('secConfig').classList.add('hidden');
+
+            document.getElementById('tabFichajeBtn').className = "px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium text-slate-400 hover:text-white transition-all";
+            document.getElementById('tabDashboardBtn').className = "px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium text-slate-400 hover:text-white transition-all";
+            document.getElementById('tabConfigBtn').className = "px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium text-slate-400 hover:text-white transition-all";
+
+            const activeClass = "px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all bg-cyan-500 text-slate-950 shadow-md font-semibold";
+
+            if (tab === 'fichaje') {
+                document.getElementById('secFichaje').classList.remove('hidden');
+                document.getElementById('tabFichajeBtn').className = activeClass;
+            } else if (tab === 'dashboard') {
+                document.getElementById('secDashboard').classList.remove('hidden');
+                document.getElementById('tabDashboardBtn').className = activeClass;
+                renderDashboard();
+            } else if (tab === 'config') {
+                document.getElementById('secConfig').classList.remove('hidden');
+                document.getElementById('tabConfigBtn').className = activeClass;
+            }
+        }
+
+        function setEventType(type) {
+            currentEventType = type;
+            const btnEntry = document.getElementById('btnTypeEntry');
+            const btnExit = document.getElementById('btnTypeExit');
+
+            if (type === 'ENTRADA') {
+                btnEntry.className = "py-1.5 rounded-lg text-xs font-bold transition-all bg-cyan-500 text-slate-950 shadow";
+                btnExit.className = "py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all";
+            } else {
+                btnExit.className = "py-1.5 rounded-lg text-xs font-bold transition-all bg-amber-500 text-slate-950 shadow";
+                btnEntry.className = "py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all";
+            }
+            calculatePunctualityPreview();
+        }
+
+        // ================= WEBCAM & FOTOGRAFÍA (WebRTC + CANVAS) =================
+        async function initWebcam() {
+            const video = document.getElementById('webcamVideo');
+            const fallback = document.getElementById('cameraFallbackMsg');
+
+            try {
+                if (mediaStream) {
+                    mediaStream.getTracks().forEach(track => track.stop());
+                }
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+                    audio: false
+                });
+                video.srcObject = mediaStream;
+                video.classList.remove('hidden');
+                fallback.classList.add('hidden');
+            } catch (err) {
+                console.warn("No se pudo acceder a la webcam, activando modo respaldo.", err);
+                video.classList.add('hidden');
+                fallback.classList.remove('hidden');
+            }
+        }
+
+        function switchCameraSource() {
+            showToast("Reconectando cámara de seguridad...", "info");
+            initWebcam();
+        }
+
+        function takeSnapshot() {
+            const video = document.getElementById('webcamVideo');
+            const canvas = document.getElementById('photoCanvas');
+            const preview = document.getElementById('photoPreview');
+            const fallbackMsg = document.getElementById('cameraFallbackMsg');
+
+            // Configurar dimensiones
+            const width = video.videoWidth || 640;
+            const height = video.videoHeight || 480;
+            canvas.width = width;
+            canvas.height = height;
+
+            const ctx = canvas.getContext('2d');
+
+            if (!video.classList.contains('hidden') && video.readyState === 4) {
+                // Dibujar frame del video
+                ctx.drawImage(video, 0, 0, width, height);
+            } else {
+                // Dibujar foto simulada tipo avatar SOC
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(0, 0, width, height);
+                ctx.fillStyle = '#00d1b2';
+                ctx.font = 'bold 24px Inter, sans-serif';
+                ctx.fillText("EVENCIA FOTOGRÁFICA REGISTRADA", 40, height / 2);
+            }
+
+            // APLICAR MARCA DE AGUA SOC OFICIAL
+            const now = new Date();
+            const timeStampStr = now.toLocaleString('es-BO');
+            const guardSelect = document.getElementById('guardSelect');
+            const guardName = guardSelect.options[guardSelect.selectedIndex]?.text || "VIGILANTE UNASSIGNED";
+
+            // Banner inferior translúcido
+            ctx.fillStyle = 'rgba(11, 27, 43, 0.85)';
+            ctx.fillRect(0, height - 60, width, 60);
+
+            // Marca de agua texto
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 14px monospace';
+            ctx.fillText(`SOC SECURITY EVIDENCIA | ${guardName}`, 15, height - 35);
+            ctx.fillStyle = '#00d1b2';
+            ctx.font = '12px monospace';
+            ctx.fillText(`FECHA: ${timeStampStr} | LAT/LNG: ${currentCoords.lat.toFixed(4)}, ${currentCoords.lng.toFixed(4)}`, 15, height - 15);
+
+            capturedPhotoBase64 = canvas.toDataURL('image/jpeg', 0.85);
+
+            // Mostrar Preview UI
+            preview.src = capturedPhotoBase64;
+            preview.classList.remove('hidden');
+            video.classList.add('hidden');
+            fallbackMsg.classList.add('hidden');
+            document.getElementById('cameraHud').classList.add('hidden');
+
+            document.getElementById('btnSnapPhoto').classList.add('hidden');
+            document.getElementById('btnRetakePhoto').classList.remove('hidden');
+
+            showToast("Foto de evidencia capturada con éxito.", "success");
+        }
+
+        function resetPhotoCapture() {
+            capturedPhotoBase64 = null;
+            document.getElementById('photoPreview').classList.add('hidden');
+            document.getElementById('btnSnapPhoto').classList.remove('hidden');
+            document.getElementById('btnRetakePhoto').classList.add('hidden');
+            document.getElementById('cameraHud').classList.remove('hidden');
+
+            const video = document.getElementById('webcamVideo');
+            if (mediaStream && mediaStream.active) {
+                video.classList.remove('hidden');
+            } else {
+                document.getElementById('cameraFallbackMsg').classList.remove('hidden');
+            }
+        }
+
+        function handleFallbackImageUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.getElementById('photoCanvas');
+                    canvas.width = 640;
+                    canvas.height = 480;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, 640, 480);
+
+                    // Marca de Agua
+                    ctx.fillStyle = 'rgba(11, 27, 43, 0.85)';
+                    ctx.fillRect(0, 420, 640, 60);
+                    ctx.fillStyle = '#00d1b2';
+                    ctx.font = '12px monospace';
+                    ctx.fillText(`EVIDENCIA ARCHIVO LOCAL | ${new Date().toLocaleString()}`, 15, 455);
+
+                    capturedPhotoBase64 = canvas.toDataURL('image/jpeg', 0.85);
+                    document.getElementById('photoPreview').src = capturedPhotoBase64;
+                    document.getElementById('photoPreview').classList.remove('hidden');
+                    document.getElementById('cameraFallbackMsg').classList.add('hidden');
+                    document.getElementById('btnSnapPhoto').classList.add('hidden');
+                    document.getElementById('btnRetakePhoto').classList.remove('hidden');
+                }
+                img.src = evt.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // ================= MAPA Y GEOLOCALIZACIÓN (LEAFLET) =================
+        function initLeafletMap() {
+            mapInstance = L.map('mapContainer', { zoomControl: false }).setView([currentCoords.lat, currentCoords.lng], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 18,
+                attribution: '&copy; OpenStreetMap'
+            }).addTo(mapInstance);
+
+            // Icono de PIN SOC
+            const customIcon = L.divIcon({
+                className: 'custom-pin',
+                html: `<div style="background-color:#00d1b2; width:16px; height:16px; border-radius:50%; border:3px solid #0f172a; box-shadow:0 0 10px #00d1b2"></div>`,
+                iconSize: [16, 16]
+            });
+
+            mapMarker = L.marker([currentCoords.lat, currentCoords.lng], { icon: customIcon }).addTo(mapInstance);
+            refreshGeolocation();
+        }
+
+        function refreshGeolocation() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        currentCoords.lat = position.coords.latitude;
+                        currentCoords.lng = position.coords.longitude;
+                        currentCoords.label = "Coordenadas GPS Reales GPS-Device";
+                        updateMapUI();
+                    },
+                    (error) => {
+                        console.warn("GPS Real denegado/no disponible. Usando ubicación simulada del SOC.", error.message);
+                        // Mantener las coordenadas por defecto de Bolivia (ej: Viacha / La Paz)
+                        updateMapUI();
+                    },
+                    { timeout: 5000 }
+                );
+            } else {
+                updateMapUI();
+            }
+        }
+
+        function updateMapUI() {
+            if (mapInstance && mapMarker) {
+                mapInstance.setView([currentCoords.lat, currentCoords.lng], 14);
+                mapMarker.setLatLng([currentCoords.lat, currentCoords.lng]);
+            }
+            const text = `Lat: ${currentCoords.lat.toFixed(4)}, Lng: ${currentCoords.lng.toFixed(4)}`;
+            document.getElementById('geoCoordsText').textContent = text;
+            document.getElementById('hudLocation').textContent = text;
+        }
+
+
+        // ================= LÓGICA DE PUNTUALIDAD Y REGISTRO =================
+        function calculatePunctualityPreview() {
+            const shift = document.getElementById('shiftSelect').value;
+            const now = new Date();
+            
+            let targetHour = 7;
+            if (shift === 'TARDE') targetHour = 15;
+            if (shift === 'NOCHE') targetHour = 23;
+
+            const shiftDate = new Date();
+            shiftDate.setHours(targetHour, 0, 0, 0);
+
+            // Diferencia en minutos
+            const diffMinutes = Math.floor((now - shiftDate) / 60000);
+
+            const statusText = document.getElementById('punctualityStatusText');
+            const delayText = document.getElementById('punctualityDelayMinutes');
+            const iconBadge = document.getElementById('punctualityBadgeIcon');
+
+            if (currentEventType === 'SALIDA') {
+                statusText.textContent = "REGISTRO DE SALIDA";
+                statusText.className = "text-xs font-bold text-cyan-400";
+                delayText.textContent = "Finalización Turno";
+                iconBadge.className = "w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center";
+                return { status: "A tiempo", delay: 0 };
+            }
+
+            if (diffMinutes <= config.toleranceMinutes) {
+                statusText.textContent = "A TIEMPO (PUNTUAL)";
+                statusText.className = "text-xs font-bold text-emerald-400";
+                delayText.textContent = diffMinutes <= 0 ? "Sin atraso" : `+${diffMinutes} min (Tolerado)`;
+                iconBadge.className = "w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center";
+                return { status: "A tiempo", delay: Math.max(0, diffMinutes) };
+            } else if (diffMinutes <= config.severeThresholdMinutes) {
+                statusText.textContent = "ATRASO LEVE";
+                statusText.className = "text-xs font-bold text-amber-400";
+                delayText.textContent = `+${diffMinutes} min atraso`;
+                iconBadge.className = "w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center";
+                return { status: "Atraso leve", delay: diffMinutes };
+            } else {
+                statusText.textContent = "ATRASO SEVERO";
+                statusText.className = "text-xs font-bold text-rose-500";
+                delayText.textContent = `+${diffMinutes} min atraso`;
+                iconBadge.className = "w-8 h-8 rounded-lg bg-rose-500/20 text-rose-500 flex items-center justify-center";
+                return { status: "Atraso severo", delay: diffMinutes };
+            }
+        }
+
+        // GUARDAR FICHAJE
+        function submitAttendanceRecord() {
+            const guardCode = document.getElementById('guardSelect').value;
+            const site = document.getElementById('siteSelect').value;
+            const shift = document.getElementById('shiftSelect').value;
+            const notes = document.getElementById('recordNotes').value;
+
+            if (!guardCode) {
+                showToast("Por favor seleccione un vigilante de la lista.", "error");
+                return;
+            }
+
+            if (!capturedPhotoBase64) {
+                showToast("Es obligatorio capturar una foto de evidencia para fichar.", "error");
+                return;
+            }
+
+            const guardObj = DEFAULT_GUARDS.find(g => g.code === guardCode);
+            const punctuality = calculatePunctualityPreview();
+            const now = new Date();
+
+            const newRecord = {
+                id: 'REC-' + Date.now().toString().slice(-6),
+                guardCode: guardCode,
+                guardName: guardObj ? guardObj.name : "Vigilante",
+                site: site,
+                shift: shift,
+                eventType: currentEventType,
+                timestamp: now.toISOString(),
+                formattedTime: now.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                formattedDate: now.toLocaleDateString('es-BO'),
+                punctualityStatus: punctuality.status,
+                delayMinutes: punctuality.delay,
+                coords: { lat: currentCoords.lat, lng: currentCoords.lng },
+                photo: capturedPhotoBase64,
+                notes: notes || "Sin novedades registradas."
+            };
+
+            attendanceRecords.unshift(newRecord);
+            saveRecordsToStorage();
+
+            showToast(`Fichaje de ${newRecord.guardName} guardado con éxito.`, "success");
+
+            // Limpiar Formulario
+            document.getElementById('recordNotes').value = '';
+            resetPhotoCapture();
+            
+            // Redirigir a Dashboard tras 1.2 segundos
+            setTimeout(() => {
+                switchTab('dashboard');
+            }, 1200);
+        }
+
+        // Generar datos simulados iniciales si está vacío
+        function generateMockRecords() {
+            const mockPhotos = [
+                'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 24 24" fill="none" stroke="%200d1b2" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
+            ];
+
+            attendanceRecords = [
+                {
+                    id: 'REC-908123',
+                    guardCode: 'VIG-101',
+                    guardName: 'Carlos Mamani Flores',
+                    site: 'Planta Industrial - Viacha',
+                    shift: 'MAÑANA',
+                    eventType: 'ENTRADA',
+                    timestamp: new Date().toISOString(),
+                    formattedTime: '06:58:12 AM',
+                    formattedDate: new Date().toLocaleDateString('es-BO'),
+                    punctualityStatus: 'A tiempo',
+                    delayMinutes: 0,
+                    coords: { lat: -16.6528, lng: -68.3006 },
+                    photo: mockPhotos[0],
+                    notes: 'Ingreso puntual sin novedades.'
+                },
+                {
+                    id: 'REC-908124',
+                    guardCode: 'VIG-102',
+                    guardName: 'Roberto Quispe Condori',
+                    site: 'Centro Operativo - La Paz',
+                    shift: 'MAÑANA',
+                    eventType: 'ENTRADA',
+                    timestamp: new Date().toISOString(),
+                    formattedTime: '07:18:45 AM',
+                    formattedDate: new Date().toLocaleDateString('es-BO'),
+                    punctualityStatus: 'Atraso leve',
+                    delayMinutes: 18,
+                    coords: { lat: -16.5000, lng: -68.1500 },
+                    photo: mockPhotos[0],
+                    notes: 'Demora por tráfico vehicular en autopista.'
+                }
+            ];
+            saveRecordsToStorage();
+        }
+
+        // ================= DASHBOARD & TABLAS =================
+        function renderDashboard() {
+            updateKPIs();
+            renderTable(attendanceRecords);
+            renderCharts();
+        }
+
+        function updateKPIs() {
+            const total = attendanceRecords.length;
+            const onTime = attendanceRecords.filter(r => r.punctualityStatus === 'A tiempo').length;
+            const lateMild = attendanceRecords.filter(r => r.punctualityStatus === 'Atraso leve').length;
+            const lateSevere = attendanceRecords.filter(r => r.punctualityStatus === 'Atraso severo').length;
+
+            document.getElementById('kpiTotalCount').textContent = total;
+            document.getElementById('kpiOnTimeCount').textContent = onTime;
+            document.getElementById('kpiLateMildCount').textContent = lateMild;
+            document.getElementById('kpiLateSevereCount').textContent = lateSevere;
+        }
+
+        function renderTable(records) {
+            const tbody = document.getElementById('attendanceTableBody');
+            const emptyMsg = document.getElementById('emptyTableMsg');
+            tbody.innerHTML = '';
+
+            if (records.length === 0) {
+                emptyMsg.classList.remove('hidden');
+                return;
+            }
+            emptyMsg.classList.add('hidden');
+
+            records.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-800/40 transition-colors";
+
+                let statusBadge = '';
+                if (r.punctualityStatus === 'A tiempo') {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><i class="fa-solid fa-check text-[10px] mr-1"></i>A tiempo</span>`;
+                } else if (r.punctualityStatus === 'Atraso leve') {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20"><i class="fa-solid fa-clock text-[10px] mr-1"></i>+${r.delayMinutes}m Atraso</span>`;
+                } else {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20"><i class="fa-solid fa-triangle-exclamation text-[10px] mr-1"></i>+${r.delayMinutes}m Severo</span>`;
+                }
+
+                let typeBadge = r.eventType === 'ENTRADA' 
+                    ? `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400">ENTRADA</span>` 
+                    : `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400">SALIDA</span>`;
+
+                tr.innerHTML = `
+                    <td class="p-3">
+                        <img src="${r.photo}" onclick="openEvidenceModal('${r.id}')" class="w-10 h-10 rounded-lg object-cover border border-slate-700 cursor-pointer hover:scale-105 transition-transform" alt="Minia">
+                    </td>
+                    <td class="p-3">
+                        <div class="font-bold text-white">${r.guardName}</div>
+                        <div class="text-[10px] font-mono text-cyan-400">${r.guardCode}</div>
+                    </td>
+                    <td class="p-3 font-medium text-slate-300">
+                        ${r.site}
+                    </td>
+                    <td class="p-3">
+                        <div class="font-mono text-slate-200">${r.formattedTime} ${typeBadge}</div>
+                        <div class="text-[10px] text-slate-500">${r.formattedDate} (${r.shift})</div>
+                    </td>
+                    <td class="p-3">
+                        ${statusBadge}
+                    </td>
+                    <td class="p-3 font-mono text-[11px] text-slate-400">
+                        <i class="fa-solid fa-location-dot text-rose-500 mr-1"></i>${r.coords.lat.toFixed(3)}, ${r.coords.lng.toFixed(3)}
+                    </td>
+                    <td class="p-3 text-right">
+                        <button onclick="openEvidenceModal('${r.id}')" class="bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 p-2 rounded-lg text-xs transition-all" title="Ver Evidencia">
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function applyDashboardFilters() {
+            const search = document.getElementById('filterSearchInput').value.toLowerCase();
+            const status = document.getElementById('filterStatusSelect').value;
+            const site = document.getElementById('filterSiteSelect').value;
+
+            const filtered = attendanceRecords.filter(r => {
+                const matchesSearch = r.guardName.toLowerCase().includes(search) || r.guardCode.toLowerCase().includes(search);
+                const matchesStatus = status === 'ALL' || r.punctualityStatus === status;
+                const matchesSite = site === 'ALL' || r.site === site;
+                return matchesSearch && matchesStatus && matchesSite;
+            });
+
+            renderTable(filtered);
+        }
+
+        // RENDERIZAR GRÁFICOS CON CHART.JS
+        function renderCharts() {
+            // Destruir previas si existen
+            if (chartPunctuality) chartPunctuality.destroy();
+            if (chartSite) chartSite.destroy();
+
+            const onTime = attendanceRecords.filter(r => r.punctualityStatus === 'A tiempo').length;
+            const lateMild = attendanceRecords.filter(r => r.punctualityStatus === 'Atraso leve').length;
+            const lateSevere = attendanceRecords.filter(r => r.punctualityStatus === 'Atraso severo').length;
+
+            // Chart 1: Donut Puntualidad
+            const ctx1 = document.getElementById('punctualityChart').getContext('2d');
+            chartPunctuality = new Chart(ctx1, {
+                type: 'doughnut',
+                data: {
+                    labels: ['A tiempo', 'Atraso Leve', 'Atraso Severo'],
+                    datasets: [{
+                        data: [onTime, lateMild, lateSevere],
+                        backgroundColor: ['#10b981', '#f59e0b', '#f43f5e'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 11 } } }
+                    }
+                }
+            });
+
+            // Chart 2: Barras por Sede
+            const siteCounts = {};
+            DEFAULT_SITES.forEach(s => siteCounts[s] = 0);
+            attendanceRecords.forEach(r => {
+                if (siteCounts[r.site] !== undefined) siteCounts[r.site]++;
+            });
+
+            const ctx2 = document.getElementById('siteChart').getContext('2d');
+            chartSite = new Chart(ctx2, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(siteCounts).map(s => s.split('-')[0]),
+                    datasets: [{
+                        label: 'Fichajes por Sede',
+                        data: Object.values(siteCounts),
+                        backgroundColor: '#00d1b2',
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { ticks: { color: '#94a3b8', stepSize: 1 }, grid: { color: '#1e293b' } },
+                        x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+
+
+        // ================= MODAL & EXPORTACIÓN =================
+        function openEvidenceModal(recordId) {
+            const record = attendanceRecords.find(r => r.id === recordId);
+            if (!record) return;
+
+            document.getElementById('modalImage').src = record.photo;
+            document.getElementById('modalGuardName').textContent = record.guardName;
+            document.getElementById('modalGuardCode').textContent = record.guardCode;
+            document.getElementById('modalSite').textContent = record.site;
+            document.getElementById('modalTimestamp').textContent = `${record.formattedDate} - ${record.formattedTime}`;
+            document.getElementById('modalAction').textContent = `${record.eventType} (${record.shift})`;
+            document.getElementById('modalGeo').textContent = `${record.coords.lat.toFixed(4)}, ${record.coords.lng.toFixed(4)}`;
+            document.getElementById('modalNotesText').textContent = record.notes || "Sin observaciones.";
+
+            const badge = document.getElementById('modalPunctualityBadge');
+            badge.textContent = record.punctualityStatus;
+
+            if (record.punctualityStatus === 'A tiempo') {
+                badge.className = "absolute top-3 right-3 px-2.5 py-1 rounded-full text-xs font-bold uppercase shadow bg-emerald-500 text-slate-950";
+            } else if (record.punctualityStatus === 'Atraso leve') {
+                badge.className = "absolute top-3 right-3 px-2.5 py-1 rounded-full text-xs font-bold uppercase shadow bg-amber-500 text-slate-950";
+            } else {
+                badge.className = "absolute top-3 right-3 px-2.5 py-1 rounded-full text-xs font-bold uppercase shadow bg-rose-500 text-white";
+            }
+
+            document.getElementById('evidenceModal').classList.remove('hidden');
+        }
+
+        function closeEvidenceModal() {
+            document.getElementById('evidenceModal').classList.add('hidden');
+        }
+
+        // Exportar a CSV
+        function exportDataCSV() {
+            if (attendanceRecords.length === 0) {
+                showToast("No hay registros para exportar.", "error");
+                return;
+            }
+
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "ID,Codigo_Vigilante,Nombre,Sede,Turno,Accion,Fecha,Hora,Estado_Puntualidad,Minutos_Atraso,Latitud,Longitud,Notas\n";
+
+            attendanceRecords.forEach(r => {
+                const row = [
+                    r.id,
+                    r.guardCode,
+                    `"${r.guardName}"`,
+                    `"${r.site}"`,
+                    r.shift,
+                    r.eventType,
+                    r.formattedDate,
+                    r.formattedTime,
+                    r.punctualityStatus,
+                    r.delayMinutes,
+                    r.coords.lat,
+                    r.coords.lng,
+                    `"${r.notes}"`
+                ].join(",");
+                csvContent += row + "\n";
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `SOC_Asistencia_Vigilantes_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            showToast("Reporte CSV descargado correctamente.", "success");
+        }
+
+        function clearAllDataPrompt() {
+            if (confirm("¿Está seguro de borrar todo el historial de asistencia? Esta acción no se puede deshacer.")) {
+                attendanceRecords = [];
+                saveRecordsToStorage();
+                renderDashboard();
+                showToast("Historial borrado completamente.", "info");
+            }
+        }
+
+        function saveConfiguration() {
+            config.shiftMorning = document.getElementById('cfgShiftMorning').value;
+            config.shiftAfternoon = document.getElementById('cfgShiftAfternoon').value;
+            config.shiftNight = document.getElementById('cfgShiftNight').value;
+            config.toleranceMinutes = parseInt(document.getElementById('cfgToleranceMinutes').value) || 10;
+            config.severeThresholdMinutes = parseInt(document.getElementById('cfgSevereThresholdMinutes').value) || 25;
+
+            localStorage.setItem('soc_config', JSON.stringify(config));
+            showToast("Configuración del SOC actualizada correctamente.", "success");
+            calculatePunctualityPreview();
+        }
+
+        // Toast Helper
+        function showToast(msg, type = "success") {
+            const toast = document.getElementById('toastNotification');
+            const messageEl = document.getElementById('toastMessage');
+            const iconEl = document.getElementById('toastIcon');
+
+            messageEl.textContent = msg;
+
+            if (type === "success") {
+                iconEl.className = "fa-solid fa-circle-check text-emerald-400 text-base";
+            } else if (type === "error") {
+                iconEl.className = "fa-solid fa-circle-xmark text-rose-500 text-base";
+            } else {
+                iconEl.className = "fa-solid fa-circle-info text-cyan-400 text-base";
+            }
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
