@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOC Guards - Control de Asistencia y Auditoría de Seguridad</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        soc: {
+                            50: '#f0f4f8',
+                            100: '#d9e2ec',
+                            green: '#13501B', // Verde oscuro industrial
+                            navy: '#003366',  // Azul corporativo
+                            dark: '#081018',  // Gris oscuro SOC
+                            card: '#0e1a26',
+                            border: '#1a2b3c',
+                            accent: '#00d1b2',
+                            warning: '#f59e0b',
+                            danger: '#ef4444'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Leaflet CSS & JS (Mapa de Geolocalización) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- JSZip y FileSaver para descargar paquete ZIP de fotos -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Custom scrollbars */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #081018; }
+        ::-webkit-scrollbar-thumb { background: #1a2b3c; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #00d1b2; }
+
+        .pulse-active {
+            box-shadow: 0 0 0 0 rgba(0, 209, 178, 0.7);
+            animation: pulse-green 2s infinite;
+        }
+        @keyframes pulse-green {
+            0% { transform: scale(0.98); box-shadow: 0 0 0 0 rgba(0, 209, 178, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(0, 209, 178, 0); }
+            100% { transform: scale(0.98); box-shadow: 0 0 0 0 rgba(0, 209, 178, 0); }
+        }
+    </style>
+</head>
+<body class="bg-soc-dark text-slate-100 min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-slate-950">
+
+    <!-- Header Principal / Navbar con Selector de Modo (Vigilante vs Supervisor) -->
+    <header class="bg-slate-950 border-b border-soc-border sticky top-0 z-40 backdrop-blur-md bg-opacity-95 shadow-xl">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            
+            <!-- Logo Corporativo SOC -->
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-soc-navy flex items-center justify-center text-white font-black text-xl shadow-lg border border-emerald-500/30">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-base sm:text-lg leading-none tracking-wide text-white flex items-center gap-2">
+                        SOC GUARDIAN <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">V2.8 PRO</span>
+                    </h1>
+                    <p class="text-[11px] text-slate-400">Seguridad Física & Patrimonial</p>
+                </div>
+            </div>
+
+            <!-- Selector de Rol (Vigilante / Administrador) -->
+            <div class="flex items-center gap-3">
+                <!-- Reloj Digital Header -->
+                <div class="hidden lg:flex flex-col items-end border-r border-soc-border pr-4">
+                    <span id="headerClock" class="font-mono text-xs font-bold text-cyan-400">00:00:00 AM</span>
+                    <span id="headerDate" class="text-[10px] text-slate-400">--/--/----</span>
+                </div>
+
+                <!-- Toggle Selector de Modo -->
+                <div class="bg-soc-card p-1 rounded-xl border border-soc-border flex items-center shadow-inner">
+                    <button id="btnRoleVigilante" onclick="switchRole('VIGILANTE')" class="px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 bg-soc-green text-white shadow-md">
+                        <i class="fa-solid fa-user-shield"></i>
+                        <span class="hidden sm:inline">Modo</span> Vigilante
+                    </button>
+                    <button id="btnRoleAdmin" onclick="switchRole('ADMIN')" class="px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center gap-2">
+                        <i class="fa-solid fa-chart-pie"></i>
+                        <span class="hidden sm:inline">Modo</span> Admin / SOC
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Contenido Dinámico de la Aplicación -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+
+        <!-- ================================================================= -->
+        <!-- MÓDULO 1: MODO VIGILANTE (REGISTRO, FOTO, GEOLOCALIZACIÓN Y ATRASO) -->
+        <!-- ================================================================= -->
+        <section id="viewVigilante" class="space-y-6">
+            
+            <!-- Banner Informativo Vigilante -->
+            <div class="bg-gradient-to-r from-soc-navy to-soc-card border border-soc-border rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-xl">
+                <div>
+                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-camera text-cyan-400"></i> Registro Obligatorio de Asistencia
+                    </h2>
+                    <p class="text-xs text-slate-300 mt-1">Capture su fotografía en vivo en el puesto asignado para verificar puntualidad y uniformidad.</p>
+                </div>
+                <div class="flex items-center gap-2 bg-slate-950/60 px-3 py-1.5 rounded-xl border border-slate-700/80">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span class="text-xs font-mono text-emerald-400">GPS & Cámara Activos</span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+                <!-- Columna Izquierda: Formulario de Selección -->
+                <div class="lg:col-span-5 space-y-5">
+                    <div class="bg-soc-card rounded-2xl p-5 border border-soc-border shadow-xl space-y-4">
+                        <h3 class="text-xs font-bold text-cyan-400 uppercase tracking-wider border-b border-soc-border pb-2">
+                            1. Datos de Fichaje
+                        </h3>
+
+                        <!-- Seleccionar Vigilante -->
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1.5">Vigilante / Código *</label>
+                            <select id="vGuardSelect" onchange="onGuardChange()" class="w-full bg-soc-dark border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-cyan-500">
+                                <option value="">-- Seleccione su nombre --</option>
+                            </select>
+                        </div>
+
+                        <!-- Seleccionar Planta / Puesto -->
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1.5">Planta / Regional / Puesto *</label>
+                            <select id="vSiteSelect" class="w-full bg-soc-dark border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-cyan-500">
+                                <!-- Dinámico -->
+                            </select>
+                        </div>
+
+                        <!-- Tipo de Registro y Turno -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1.5">Tipo de Registro</label>
+                                <select id="vEventTypeSelect" onchange="updatePunctualityLive()" class="w-full bg-soc-dark border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                                    <option value="ENTRADA">ENTRADA</option>
+                                    <option value="SALIDA">SALIDA</option>
+                                    <option value="RONDA">RONDA DE CONTROL</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1.5">Turno Programado</label>
+                                <select id="vShiftSelect" onchange="updatePunctualityLive()" class="w-full bg-soc-dark border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                                    <option value="MAÑANA">Mañana (07:00 AM)</option>
+                                    <option value="TARDE">Tarde (15:00 PM)</option>
+                                    <option value="NOCHE">Noche (23:00 PM)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Estado de Puntualidad Estimado en Tiempo Real -->
+                        <div id="vPunctualityBox" class="p-3.5 rounded-xl bg-slate-900 border border-soc-border flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div id="vPunctualityIcon" class="w-9 h-9 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-base">
+                                    <i class="fa-solid fa-clock"></i>
+                                </div>
+                                <div>
+                                    <p class="text-[11px] text-slate-400">Estado de Ingreso</p>
+                                    <p id="vPunctualityStatus" class="text-xs font-bold text-emerald-400">A TIEMPO</p>
+                                </div>
+                            </div>
+                            <span id="vPunctualityDelay" class="text-xs font-mono font-bold bg-slate-800 px-2.5 py-1 rounded-lg text-slate-300">+0 min atraso</span>
+                        </div>
+
+                        <!-- Mapa Interactivo GPS -->
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-xs font-medium text-slate-300"><i class="fa-solid fa-location-dot text-rose-500"></i> Geolocalización GPS</label>
+                                <button type="button" onclick="refreshGPS()" class="text-[11px] text-cyan-400 hover:underline">Recargar GPS</button>
+                            </div>
+                            <div id="vMap" class="h-32 rounded-xl border border-soc-border bg-soc-dark overflow-hidden"></div>
+                            <p id="vMapCoords" class="text-[11px] font-mono text-slate-400 mt-1 text-right">Obteniendo señal GPS...</p>
+                        </div>
+
+                        <!-- Observaciones -->
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Observaciones / Novedades</label>
+                            <input type="text" id="vNotes" placeholder="Ej: Relevo en puerta sin novedades..." class="w-full bg-soc-dark border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Columna Derecha: Cámara & Evidencia Foto -->
+                <div class="lg:col-span-7 space-y-5">
+                    <div class="bg-soc-card rounded-2xl p-5 border border-soc-border shadow-xl space-y-4 flex flex-col justify-between h-full">
+                        <h3 class="text-xs font-bold text-cyan-400 uppercase tracking-wider border-b border-soc-border pb-2 flex justify-between items-center">
+                            <span>2. Captura Fotográfica Obligatoria</span>
+                            <span class="text-[10px] text-slate-400 font-normal">Marca de agua automática con datos GPS</span>
+                        </h3>
+
+                        <!-- Contenedor del Visor de Cámara -->
+                        <div class="relative bg-black rounded-2xl overflow-hidden border-2 border-dashed border-soc-border min-h-[320px] flex items-center justify-center group">
+                            <!-- Stream Live Video -->
+                            <video id="vCamVideo" autoplay playsinline class="w-full h-full max-h-[380px] object-cover"></video>
+
+                            <!-- Canvas para Generar la Marca de Agua HD -->
+                            <canvas id="vCamCanvas" class="hidden"></canvas>
+
+                            <!-- Imagen Capturada Preview -->
+                            <img id="vCamPreview" class="hidden w-full h-full max-h-[380px] object-cover" alt="Foto capturada">
+
+                            <!-- Overlays / HUD de Seguridad -->
+                            <div id="vCamHud" class="absolute inset-0 pointer-events-none p-4 flex flex-col justify-between">
+                                <div class="flex justify-between items-start">
+                                    <div class="bg-slate-950/80 backdrop-blur px-2.5 py-1 rounded-lg text-[11px] font-mono text-emerald-400 border border-emerald-500/30 flex items-center gap-2">
+                                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> CÁMARA SOC ACTIVA
+                                    </div>
+                                    <div class="bg-slate-950/80 backdrop-blur px-2.5 py-1 rounded-lg text-[11px] font-mono text-slate-300 border border-slate-700">
+                                        VERIFICACIÓN UNIFORME
+                                    </div>
+                                </div>
+
+                                <!-- Cuadro de Enfoque -->
+                                <div class="self-center w-48 h-48 border border-cyan-400/40 rounded-2xl border-dashed flex items-center justify-center">
+                                    <div class="w-2 h-2 bg-cyan-400 rounded-full"></div>
+                                </div>
+
+                                <div class="bg-slate-950/80 backdrop-blur p-2 rounded-lg border border-slate-800 text-[11px] font-mono text-slate-300 flex justify-between">
+                                    <span id="vHudTime">2026-10-21 --:--:--</span>
+                                    <span id="vHudGeo">GPS: Conectando...</span>
+                                </div>
+                            </div>
+
+                            <!-- Fallback si la cámara falla -->
+                            <div id="vCamFallback" class="hidden absolute inset-0 bg-soc-dark p-6 flex flex-col items-center justify-center text-center space-y-3">
+                                <i class="fa-solid fa-video-slash text-3xl text-slate-500"></i>
+                                <p class="text-xs text-slate-300">Cámara WebRTC no disponible o bloqueada.</p>
+                                <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-cyan-400 px-4 py-2 rounded-xl text-xs font-semibold border border-slate-700 transition-all flex items-center gap-2">
+                                    <i class="fa-solid fa-upload"></i> Subir foto de respaldo
+                                    <input type="file" accept="image/*" class="hidden" onchange="handleFallbackUpload(event)">
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Botones de Acción -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                            <button type="button" id="btnCapturePhoto" onclick="capturePhoto()" class="bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-camera text-cyan-400"></i> Tomar Fotografía
+                            </button>
+
+                            <button type="button" id="btnRetakePhoto" onclick="retakePhoto()" class="hidden bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 px-4 rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-rotate-left"></i> Volver a Capturar
+                            </button>
+
+                            <button type="button" onclick="submitAttendance()" class="sm:col-span-1 bg-gradient-to-r from-emerald-600 to-soc-green hover:from-emerald-500 hover:to-emerald-600 text-white font-black py-3 px-4 rounded-xl shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 active:scale-95">
+                                <i class="fa-solid fa-check-double text-lg"></i> ENVIAR REGISTRO DE ASISTENCIA
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+
+        <!-- ================================================================= -->
+        <!-- MÓDULO 2: MODO ADMINISTRADOR / SUPERVISOR (DASHBOARD SOC, TABLA Y EXPORT) -->
+        <!-- ================================================================= -->
+        <section id="viewAdmin" class="hidden space-y-6">
+
+            <!-- KPIs de Operaciones y Atrasos -->
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div class="bg-soc-card rounded-2xl p-4 border border-soc-border shadow-md">
+                    <p class="text-xs text-slate-400 font-medium">Total Fichajes</p>
+                    <h3 id="kpiTotal" class="text-2xl font-black text-white mt-1">0</h3>
+                    <span class="text-[10px] text-slate-500">Registros almacenados</span>
+                </div>
+
+                <div class="bg-soc-card rounded-2xl p-4 border border-soc-border shadow-md">
+                    <p class="text-xs text-slate-400 font-medium">A Tiempo</p>
+                    <h3 id="kpiOnTime" class="text-2xl font-black text-emerald-400 mt-1">0</h3>
+                    <span class="text-[10px] text-emerald-500/80">Dentro de tolerancia</span>
+                </div>
+
+                <div class="bg-soc-card rounded-2xl p-4 border border-soc-border shadow-md">
+                    <p class="text-xs text-slate-400 font-medium">Atrasos Registrados</p>
+                    <h3 id="kpiLate" class="text-2xl font-black text-amber-400 mt-1">0</h3>
+                    <span class="text-[10px] text-amber-500/80">Personal con demora</span>
+                </div>
+
+                <div class="bg-soc-card rounded-2xl p-4 border border-soc-border shadow-md">
+                    <p class="text-xs text-slate-400 font-medium">% Puntualidad</p>
+                    <h3 id="kpiPunctualityRate" class="text-2xl font-black text-cyan-400 mt-1">100%</h3>
+                    <span class="text-[10px] text-cyan-500/80">Efectividad global</span>
+                </div>
+
+                <div class="bg-soc-card rounded-2xl p-4 border border-soc-border shadow-md col-span-2 md:col-span-1">
+                    <p class="text-xs text-slate-400 font-medium">Minutos Atraso Acumulados</p>
+                    <h3 id="kpiTotalDelayMinutes" class="text-2xl font-black text-rose-500 mt-1">0 min</h3>
+                    <span class="text-[10px] text-rose-500/80">Tiempo a sancionar/descontar</span>
+                </div>
+            </div>
+
+            <!-- Gráficos Estadísticos del SOC -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Gráfico 1: Asistencia vs Atrasos por Regional -->
+                <div class="lg:col-span-2 bg-soc-card rounded-2xl p-5 border border-soc-border shadow-xl flex flex-col justify-between">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-chart-column"></i> Puntualidad por Regional / Planta
+                        </h3>
+                    </div>
+                    <div class="relative flex-1 min-h-[220px]">
+                        <canvas id="chartByRegional"></canvas>
+                    </div>
+                </div>
+
+                <!-- Gráfico 2: Distribución de Atrasos -->
+                <div class="bg-soc-card rounded-2xl p-5 border border-soc-border shadow-xl flex flex-col justify-between">
+                    <h3 class="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-chart-pie"></i> Distribución de Retrasos
+                    </h3>
+                    <div class="relative flex-1 flex items-center justify-center min-h-[220px]">
+                        <canvas id="chartDelayDistribution"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Toolbar de Filtros y Botones de Exportación Avanzados -->
+            <div class="bg-soc-card rounded-2xl p-4 border border-soc-border flex flex-col lg:flex-row gap-4 justify-between items-center shadow-lg">
+                <div class="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+                    <!-- Búsqueda -->
+                    <div class="relative flex-1 sm:w-48">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-500"></i>
+                        <input type="text" id="fSearch" oninput="applyFilters()" placeholder="Buscar vigilante..." class="w-full bg-soc-dark border border-slate-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500">
+                    </div>
+
+                    <!-- Filtro Planta/Regional -->
+                    <select id="fRegional" onchange="applyFilters()" class="bg-soc-dark border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none">
+                        <option value="ALL">Todas las Plantas</option>
+                    </select>
+
+                    <!-- Filtro Estado -->
+                    <select id="fStatus" onchange="applyFilters()" class="bg-soc-dark border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none">
+                        <option value="ALL">Todos los Estados</option>
+                        <option value="A tiempo">Solo A Tiempo</option>
+                        <option value="Atrasado">Solo Atrasados</option>
+                    </select>
+                </div>
+
+                <!-- Botones de Exportación Completa -->
+                <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-end">
+                    <!-- Exportar CSV / Excel -->
+                    <button onclick="exportCSV()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1.5 rounded-xl text-xs transition-all flex items-center gap-1.5 shadow">
+                        <i class="fa-solid fa-file-excel"></i> Exportar CSV/Excel
+                    </button>
+
+                    <!-- Descargar Fotos en Paquete ZIP -->
+                    <button onclick="exportPhotosZIP()" class="bg-soc-navy hover:bg-blue-800 text-white font-semibold px-3 py-1.5 rounded-xl text-xs transition-all flex items-center gap-1.5 shadow border border-blue-500/30">
+                        <i class="fa-solid fa-file-zipper text-cyan-400"></i> Descargar Fotos (ZIP)
+                    </button>
+
+                    <!-- Exportar Backup JSON con Base64 -->
+                    <button onclick="exportJSONBackup()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-3 py-1.5 rounded-xl text-xs transition-all flex items-center gap-1.5 border border-slate-700">
+                        <i class="fa-solid fa-code"></i> JSON Audit
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tabla Completa de Auditoría de Asistencia -->
+            <div class="bg-soc-card rounded-2xl border border-soc-border shadow-xl overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs text-slate-300">
+                        <thead class="bg-slate-950 text-slate-400 uppercase font-mono border-b border-soc-border">
+                            <tr>
+                                <th class="p-3.5">Evidencia Foto</th>
+                                <th class="p-3.5">Vigilante</th>
+                                <th class="p-3.5">Regional / Puesto</th>
+                                <th class="p-3.5">Programado vs Real</th>
+                                <th class="p-3.5">Estado / Min Atraso</th>
+                                <th class="p-3.5">Geolocalización</th>
+                                <th class="p-3.5 text-right">Auditoría</th>
+                            </tr>
+                        </thead>
+                        <tbody id="attendanceTableBody" class="divide-y divide-slate-800/60">
+                            <!-- Filas dinámicas -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="tableEmptyState" class="p-8 text-center text-slate-500 hidden">
+                    <i class="fa-solid fa-folder-open text-3xl mb-2 block"></i>
+                    No se encontraron marcas de asistencia con los filtros seleccionados.
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Modal Visor de Evidencia / Auditoría de Uniforme con Zoom -->
+    <div id="auditModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-soc-card border border-soc-border rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl space-y-4 p-5 animate-in fade-in zoom-in-95 duration-200">
+            <div class="flex justify-between items-center border-b border-soc-border pb-3">
+                <h3 class="font-bold text-white text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-user-check text-cyan-400"></i> Auditoría de Evidencia SOC
+                </h3>
+                <button onclick="closeAuditModal()" class="text-slate-400 hover:text-white text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- Visor Imagen -->
+            <div class="rounded-xl overflow-hidden border border-soc-border bg-black relative group">
+                <img id="mImg" src="" class="w-full max-h-[320px] object-contain transition-transform duration-300 group-hover:scale-110 cursor-zoom-in" alt="Evidencia">
+                <span id="mBadge" class="absolute top-3 right-3 px-2.5 py-1 rounded-full text-xs font-bold uppercase shadow">
+                    -
+                </span>
+            </div>
+
+            <!-- Datos Fichaje -->
+            <div class="grid grid-cols-2 gap-2.5 text-xs bg-soc-dark p-3 rounded-xl border border-soc-border">
+                <div>
+                    <span class="text-slate-500 block">Vigilante:</span>
+                    <strong id="mGuard" class="text-white">--</strong>
+                </div>
+                <div>
+                    <span class="text-slate-500 block">Regional / Puesto:</span>
+                    <strong id="mSite" class="text-slate-200">--</strong>
+                </div>
+                <div>
+                    <span class="text-slate-500 block">Programado / Real:</span>
+                    <strong id="mTime" class="text-cyan-400 font-mono">--</strong>
+                </div>
+                <div>
+                    <span class="text-slate-500 block">Atraso Calculado:</span>
+                    <strong id="mDelay" class="text-rose-400 font-mono">--</strong>
+                </div>
+                <div class="col-span-2">
+                    <span class="text-slate-500 block">Coordenadas GPS:</span>
+                    <strong id="mGeo" class="text-slate-300 font-mono text-[11px]">--</strong>
+                </div>
+            </div>
+
+            <!-- Descargas Individuales -->
+            <div class="flex justify-between items-center pt-2 border-t border-soc-border">
+                <button id="btnDownloadSinglePhoto" onclick="downloadSinglePhoto()" class="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5">
+                    <i class="fa-solid fa-download"></i> Descargar Foto Estampada
+                </button>
+                <button onclick="closeAuditModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-1.5 rounded-xl text-xs font-semibold">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Toast Notificación -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
+        <div class="bg-slate-900 border border-slate-700 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 text-xs font-medium">
+            <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-base"></i>
+            <span id="toastMsg">Operación exitosa</span>
+        </div>
+    </div>
+
+
+    <!-- SCRIPT PRINCIPAL DE LÓGICA -->
+    <script>
+        // ================= DATOS Y CONFIGURACIÓN =================
+        const REGIONALES = [
+            "Planta Viacha (La Paz)",
+            "Planta Suriquiña",
+            "Torres El Poeta (La Paz)",
+            "Sede Cota Cota (La Paz)",
+            "Villa Bolívar (El Alto)",
+            "Sucursal Tarija",
+            "Centro Logístico Santa Cruz",
+            "Planta Cochabamba",
+            "Oficinas Oruro"
+        ];
+
+        const VIGILANTES = [
+            { code: "VIG-201", name: "Carlos Mamani Flores", defaultSite: "Planta Viacha (La Paz)" },
+            { code: "VIG-202", name: "Roberto Quispe Condori", defaultSite: "Torres El Poeta (La Paz)" },
+            { code: "VIG-203", name: "Jorge Mendoza Justiniano", defaultSite: "Centro Logístico Santa Cruz" },
+            { code: "VIG-204", name: "Luis Fernandez Ugarte", defaultSite: "Planta Cochabamba" },
+            { code: "VIG-205", name: "Mario Vargas Llosa", defaultSite: "Planta Suriquiña" },
+            { code: "VIG-206", name: "Gonzalo Gutierrez", defaultSite: "Villa Bolívar (El Alto)" }
+        ];
+
+        let attendanceRecords = [];
+        let currentRole = 'VIGILANTE';
+        let currentCoords = { lat: -16.6528, lng: -68.3006 }; // Viacha por defecto
+        let capturedPhotoBase64 = null;
+        let selectedAuditRecord = null;
+        let mapInstance = null;
+        let mapMarker = null;
+        let chart1 = null;
+        let chart2 = null;
+        let mediaStream = null;
+
+        const TOLERANCE_MINUTES = 10; // 10 minutos de gracia
+
+        // ================= INICIALIZACIÓN =================
+        window.addEventListener('DOMContentLoaded', () => {
+            loadRecords();
+            initClock();
+            populateSelects();
+            initGPSMap();
+            initWebcam();
+            updatePunctualityLive();
+            renderDashboard();
+        });
+
+        function loadRecords() {
+            const data = localStorage.getItem('soc_records_v2');
+            if (data) {
+                attendanceRecords = JSON.parse(data);
+            } else {
+                generateDemoData();
+            }
+        }
+
+        function saveRecords() {
+            localStorage.setItem('soc_records_v2', JSON.stringify(attendanceRecords));
+        }
+
+        // Reloj Header
+        function initClock() {
+            setInterval(() => {
+                const now = new Date();
+                document.getElementById('headerClock').textContent = now.toLocaleTimeString('es-BO', { hour12: true });
+                document.getElementById('headerDate').textContent = now.toLocaleDateString('es-BO');
+                document.getElementById('vHudTime').textContent = `${now.toISOString().split('T')[0]} ${now.toLocaleTimeString()}`;
+            }, 1000);
+        }
+
+        // Llenar Selects
+        function populateSelects() {
+            const vGuardSelect = document.getElementById('vGuardSelect');
+            vGuardSelect.innerHTML = '<option value="">-- Seleccione su nombre --</option>';
+            VIGILANTES.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v.code;
+                opt.textContent = `[${v.code}] ${v.name}`;
+                vGuardSelect.appendChild(opt);
+            });
+
+            const vSiteSelect = document.getElementById('vSiteSelect');
+            const fRegional = document.getElementById('fRegional');
+            vSiteSelect.innerHTML = '';
+            fRegional.innerHTML = '<option value="ALL">Todas las Plantas</option>';
+
+            REGIONALES.forEach(r => {
+                const opt1 = document.createElement('option');
+                opt1.value = r; opt1.textContent = r;
+                vSiteSelect.appendChild(opt1);
+
+                const opt2 = document.createElement('option');
+                opt2.value = r; opt2.textContent = r;
+                fRegional.appendChild(opt2);
+            });
+        }
+
+        function onGuardChange() {
+            const code = document.getElementById('vGuardSelect').value;
+            const guard = VIGILANTES.find(v => v.code === code);
+            if (guard) {
+                document.getElementById('vSiteSelect').value = guard.defaultSite;
+            }
+            updatePunctualityLive();
+        }
+
+        // Cambiar Rol (Vigilante / Administrador)
+        function switchRole(role) {
+            currentRole = role;
+            const viewV = document.getElementById('viewVigilante');
+            const viewA = document.getElementById('viewAdmin');
+            const btnV = document.getElementById('btnRoleVigilante');
+            const btnA = document.getElementById('btnRoleAdmin');
+
+            if (role === 'VIGILANTE') {
+                viewV.classList.remove('hidden');
+                viewA.classList.add('hidden');
+                btnV.className = "px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-soc-green text-white shadow-md flex items-center gap-2";
+                btnA.className = "px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center gap-2";
+            } else {
+                viewV.classList.add('hidden');
+                viewA.classList.remove('hidden');
+                btnA.className = "px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-soc-navy text-white shadow-md flex items-center gap-2";
+                btnV.className = "px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center gap-2";
+                renderDashboard();
+            }
+        }
+
+        // ================= WEBCAM & CAPTURA CON MARCA DE AGUA =================
+        async function initWebcam() {
+            const video = document.getElementById('vCamVideo');
+            const fallback = document.getElementById('vCamFallback');
+
+            try {
+                if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+                    audio: false
+                });
+                video.srcObject = mediaStream;
+                video.classList.remove('hidden');
+                fallback.classList.add('hidden');
+            } catch (err) {
+                video.classList.add('hidden');
+                fallback.classList.remove('hidden');
+            }
+        }
+
+        function capturePhoto() {
+            const video = document.getElementById('vCamVideo');
+            const canvas = document.getElementById('vCamCanvas');
+            const preview = document.getElementById('vCamPreview');
+
+            const width = video.videoWidth || 640;
+            const height = video.videoHeight || 480;
+            canvas.width = width;
+            canvas.height = height;
+
+            const ctx = canvas.getContext('2d');
+            if (!video.classList.contains('hidden') && video.readyState === 4) {
+                ctx.drawImage(video, 0, 0, width, height);
+            } else {
+                ctx.fillStyle = '#081018';
+                ctx.fillRect(0, 0, width, height);
+                ctx.fillStyle = '#00d1b2';
+                ctx.font = 'bold 20px Inter, sans-serif';
+                ctx.fillText("MARCA DE SEGURIDAD SOC", 30, height / 2);
+            }
+
+            // MARCA DE AGUA DINÁMICA CON DATOS Y AVISO DE ATRASO
+            const now = new Date();
+            const guardCode = document.getElementById('vGuardSelect').value;
+            const guard = VIGILANTES.find(v => v.code === guardCode);
+            const guardName = guard ? guard.name : "VIGILANTE UNIFORMADO";
+            const punctuality = calculateDelay();
+
+            // Fondo translúcido inferior
+            ctx.fillStyle = 'rgba(8, 16, 24, 0.88)';
+            ctx.fillRect(0, height - 70, width, 70);
+
+            // Texto Marca
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 14px monospace';
+            ctx.fillText(`SOC VIGILANCIA | ${guardName.toUpperCase()} [${guardCode || 'N/A'}]`, 15, height - 45);
+
+            ctx.fillStyle = punctuality.isLate ? '#ef4444' : '#10b981';
+            ctx.font = 'bold 12px monospace';
+            ctx.fillText(`FECHA: ${now.toLocaleString('es-BO')} | ESTADO: ${punctuality.status.toUpperCase()} (+${punctuality.delayMinutes} MIN)`, 15, height - 25);
+
+            ctx.fillStyle = '#00d1b2';
+            ctx.font = '11px monospace';
+            ctx.fillText(`GPS LAT/LNG: ${currentCoords.lat.toFixed(4)}, ${currentCoords.lng.toFixed(4)}`, 15, height - 8);
+
+            capturedPhotoBase64 = canvas.toDataURL('image/jpeg', 0.88);
+
+            preview.src = capturedPhotoBase64;
+            preview.classList.remove('hidden');
+            video.classList.add('hidden');
+            document.getElementById('vCamHud').classList.add('hidden');
+
+            document.getElementById('btnCapturePhoto').classList.add('hidden');
+            document.getElementById('btnRetakePhoto').classList.remove('hidden');
+
+            showToast("Fotografía capturada con marca de agua.", "success");
+        }
+
+        function retakePhoto() {
+            capturedPhotoBase64 = null;
+            document.getElementById('vCamPreview').classList.add('hidden');
+            document.getElementById('btnCapturePhoto').classList.remove('hidden');
+            document.getElementById('btnRetakePhoto').classList.add('hidden');
+            document.getElementById('vCamHud').classList.remove('hidden');
+
+            const video = document.getElementById('vCamVideo');
+            if (mediaStream && mediaStream.active) {
+                video.classList.remove('hidden');
+            } else {
+                document.getElementById('vCamFallback').classList.remove('hidden');
+            }
+        }
+
+        function handleFallbackUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.getElementById('vCamCanvas');
+                    canvas.width = 640; canvas.height = 480;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, 640, 480);
+
+                    // Estampar marca
+                    ctx.fillStyle = 'rgba(8, 16, 24, 0.9)';
+                    ctx.fillRect(0, 420, 640, 60);
+                    ctx.fillStyle = '#00d1b2';
+                    ctx.font = '12px monospace';
+                    ctx.fillText(`EVIDENCIA SUBIDA MANUALMENTE | ${new Date().toLocaleString()}`, 15, 455);
+
+                    capturedPhotoBase64 = canvas.toDataURL('image/jpeg', 0.85);
+                    document.getElementById('vCamPreview').src = capturedPhotoBase64;
+                    document.getElementById('vCamPreview').classList.remove('hidden');
+                    document.getElementById('vCamFallback').classList.add('hidden');
+                    document.getElementById('btnCapturePhoto').classList.add('hidden');
+                    document.getElementById('btnRetakePhoto').classList.remove('hidden');
+                }
+                img.src = evt.target.result;
+            }
+            reader.readAsDataURL(file);
+        }
+
+        // ================= GEOLOCALIZACIÓN Y MAPA =================
+        function initGPSMap() {
+            mapInstance = L.map('vMap', { zoomControl: false }).setView([currentCoords.lat, currentCoords.lng], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(mapInstance);
+
+            const icon = L.divIcon({
+                className: 'custom-pin',
+                html: `<div style="background-color:#13501B; width:16px; height:16px; border-radius:50%; border:3px solid #00d1b2; box-shadow:0 0 10px #00d1b2"></div>`,
+                iconSize: [16, 16]
+            });
+
+            mapMarker = L.marker([currentCoords.lat, currentCoords.lng], { icon: icon }).addTo(mapInstance);
+            refreshGPS();
+        }
+
+        function refreshGPS() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    p => {
+                        currentCoords.lat = p.coords.latitude;
+                        currentCoords.lng = p.coords.longitude;
+                        updateMapUI();
+                    },
+                    err => { updateMapUI(); },
+                    { timeout: 4000 }
+                );
+            } else { updateMapUI(); }
+        }
+
+        function updateMapUI() {
+            if (mapInstance && mapMarker) {
+                mapInstance.setView([currentCoords.lat, currentCoords.lng], 14);
+                mapMarker.setLatLng([currentCoords.lat, currentCoords.lng]);
+            }
+            const txt = `Lat: ${currentCoords.lat.toFixed(4)}, Lng: ${currentCoords.lng.toFixed(4)}`;
+            document.getElementById('vMapCoords').textContent = txt;
+            document.getElementById('vHudGeo').textContent = txt;
+        }
+
+        // ================= LÓGICA DE ATRASOS Y FICHAJE =================
+        function calculateDelay() {
+            const shift = document.getElementById('vShiftSelect').value;
+            const eventType = document.getElementById('vEventTypeSelect').value;
+            const now = new Date();
+
+            let targetHour = 7;
+            if (shift === 'TARDE') targetHour = 15;
+            if (shift === 'NOCHE') targetHour = 23;
+
+            const scheduled = new Date();
+            scheduled.setHours(targetHour, 0, 0, 0);
+
+            if (eventType !== 'ENTRADA') {
+                return { isLate: false, delayMinutes: 0, status: 'A tiempo', scheduledTime: `${targetHour}:00` };
+            }
+
+            const diffMs = now - scheduled;
+            const diffMinutes = Math.floor(diffMs / 60000);
+
+            if (diffMinutes <= TOLERANCE_MINUTES) {
+                return {
+                    isLate: false,
+                    delayMinutes: Math.max(0, diffMinutes),
+                    status: 'A tiempo',
+                    scheduledTime: `${targetHour < 10 ? '0' + targetHour : targetHour}:00 AM`
+                };
+            } else {
+                return {
+                    isLate: true,
+                    delayMinutes: diffMinutes,
+                    status: 'Atrasado',
+                    scheduledTime: `${targetHour < 10 ? '0' + targetHour : targetHour}:00 AM`
+                };
+            }
+        }
+
+        function updatePunctualityLive() {
+            const p = calculateDelay();
+            const statusEl = document.getElementById('vPunctualityStatus');
+            const delayEl = document.getElementById('vPunctualityDelay');
+            const iconEl = document.getElementById('vPunctualityIcon');
+
+            if (!p.isLate) {
+                statusEl.textContent = "A TIEMPO (DENTRO DE TOLERANCIA)";
+                statusEl.className = "text-xs font-bold text-emerald-400";
+                delayEl.textContent = p.delayMinutes > 0 ? `+${p.delayMinutes} min (Tolerado)` : "Puntual";
+                delayEl.className = "text-xs font-mono font-bold bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-lg border border-emerald-500/20";
+                iconEl.className = "w-9 h-9 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-base";
+            } else {
+                statusEl.textContent = "CON ATRASO REGISTRADO";
+                statusEl.className = "text-xs font-bold text-rose-500";
+                delayEl.textContent = `+${p.delayMinutes} min atraso`;
+                delayEl.className = "text-xs font-mono font-bold bg-rose-500/10 text-rose-400 px-2.5 py-1 rounded-lg border border-rose-500/20";
+                iconEl.className = "w-9 h-9 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center text-base";
+            }
+        }
+
+        function submitAttendance() {
+            const guardCode = document.getElementById('vGuardSelect').value;
+            const site = document.getElementById('vSiteSelect').value;
+            const shift = document.getElementById('vShiftSelect').value;
+            const eventType = document.getElementById('vEventTypeSelect').value;
+            const notes = document.getElementById('vNotes').value;
+
+            if (!guardCode) {
+                showToast("Seleccione su nombre de la lista de vigilantes.", "error");
+                return;
+            }
+
+            if (!capturedPhotoBase64) {
+                showToast("Es obligatorio tomar la foto de evidencia antes de enviar.", "error");
+                return;
+            }
+
+            const guard = VIGILANTES.find(v => v.code === guardCode);
+            const p = calculateDelay();
+            const now = new Date();
+
+            const record = {
+                id: 'SOC-' + Date.now().toString().slice(-6),
+                guardCode: guardCode,
+                guardName: guard ? guard.name : 'Vigilante',
+                site: site,
+                shift: shift,
+                eventType: eventType,
+                timestamp: now.toISOString(),
+                formattedTime: now.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' }),
+                formattedDate: now.toLocaleDateString('es-BO'),
+                scheduledTime: p.scheduledTime,
+                status: p.status,
+                delayMinutes: p.delayMinutes,
+                coords: { lat: currentCoords.lat, lng: currentCoords.lng },
+                photo: capturedPhotoBase64,
+                notes: notes || "Sin observaciones."
+            };
+
+            attendanceRecords.unshift(record);
+            saveRecords();
+
+            showToast(`Fichaje registrado para ${record.guardName}`, "success");
+
+            // Limpiar y Reset
+            document.getElementById('vNotes').value = '';
+            retakePhoto();
+
+            // Redirigir a vista supervisor tras 1.2s para mostrar
+            setTimeout(() => {
+                switchRole('ADMIN');
+            }, 1200);
+        }
+
+        // Datos Mock Precargados
+        function generateDemoData() {
+            const mockPhoto = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200" viewBox="0 0 24 24" fill="none" stroke="%200d1b2" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+
+            attendanceRecords = [
+                {
+                    id: 'SOC-881023',
+                    guardCode: 'VIG-201',
+                    guardName: 'Carlos Mamani Flores',
+                    site: 'Planta Viacha (La Paz)',
+                    shift: 'MAÑANA',
+                    eventType: 'ENTRADA',
+                    timestamp: new Date().toISOString(),
+                    formattedTime: '06:55 AM',
+                    formattedDate: new Date().toLocaleDateString('es-BO'),
+                    scheduledTime: '07:00 AM',
+                    status: 'A tiempo',
+                    delayMinutes: 0,
+                    coords: { lat: -16.6528, lng: -68.3006 },
+                    photo: mockPhoto,
+                    notes: 'Presentación puntual con uniforme completo.'
+                },
+                {
+                    id: 'SOC-881024',
+                    guardCode: 'VIG-202',
+                    guardName: 'Roberto Quispe Condori',
+                    site: 'Torres El Poeta (La Paz)',
+                    shift: 'MAÑANA',
+                    eventType: 'ENTRADA',
+                    timestamp: new Date().toISOString(),
+                    formattedTime: '07:22 AM',
+                    formattedDate: new Date().toLocaleDateString('es-BO'),
+                    scheduledTime: '07:00 AM',
+                    status: 'Atrasado',
+                    delayMinutes: 22,
+                    coords: { lat: -16.5000, lng: -68.1200 },
+                    photo: mockPhoto,
+                    notes: 'Atraso por bloqueo de vías.'
+                },
+                {
+                    id: 'SOC-881025',
+                    guardCode: 'VIG-203',
+                    guardName: 'Jorge Mendoza Justiniano',
+                    site: 'Centro Logístico Santa Cruz',
+                    shift: 'MAÑANA',
+                    eventType: 'ENTRADA',
+                    timestamp: new Date().toISOString(),
+                    formattedTime: '07:35 AM',
+                    formattedDate: new Date().toLocaleDateString('es-BO'),
+                    scheduledTime: '07:00 AM',
+                    status: 'Atrasado',
+                    delayMinutes: 35,
+                    coords: { lat: -17.7833, lng: -63.1821 },
+                    photo: mockPhoto,
+                    notes: 'Problemas mecánicos en transporte.'
+                }
+            ];
+            saveRecords();
+        }
+
+        // ================= DASHBOARD ADMINISTRADOR & TABLAS =================
+        function renderDashboard() {
+            updateKPIs();
+            renderTable(attendanceRecords);
+            renderCharts();
+        }
+
+        function updateKPIs() {
+            const total = attendanceRecords.length;
+            const onTime = attendanceRecords.filter(r => r.status === 'A tiempo').length;
+            const late = attendanceRecords.filter(r => r.status === 'Atrasado').length;
+            const totalDelayMinutes = attendanceRecords.reduce((sum, r) => sum + (r.delayMinutes || 0), 0);
+            const rate = total > 0 ? Math.round((onTime / total) * 100) : 100;
+
+            document.getElementById('kpiTotal').textContent = total;
+            document.getElementById('kpiOnTime').textContent = onTime;
+            document.getElementById('kpiLate').textContent = late;
+            document.getElementById('kpiPunctualityRate').textContent = `${rate}%`;
+            document.getElementById('kpiTotalDelayMinutes').textContent = `${totalDelayMinutes} min`;
+        }
+
+        function renderTable(records) {
+            const tbody = document.getElementById('attendanceTableBody');
+            const emptyState = document.getElementById('tableEmptyState');
+            tbody.innerHTML = '';
+
+            if (records.length === 0) {
+                emptyState.classList.remove('hidden');
+                return;
+            }
+            emptyState.classList.add('hidden');
+
+            records.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-800/40 transition-colors";
+
+                const isLate = r.status === 'Atrasado';
+                const statusBadge = isLate
+                    ? `<span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Atrasado (+${r.delayMinutes}m)</span>`
+                    : `<span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><i class="fa-solid fa-check mr-1"></i>A tiempo</span>`;
+
+                tr.innerHTML = `
+                    <td class="p-3">
+                        <img src="${r.photo}" onclick="openAuditModal('${r.id}')" class="w-10 h-10 rounded-lg object-cover border border-soc-border cursor-pointer hover:scale-110 transition-transform" alt="Foto">
+                    </td>
+                    <td class="p-3">
+                        <div class="font-bold text-white">${r.guardName}</div>
+                        <div class="text-[10px] font-mono text-cyan-400">${r.guardCode}</div>
+                    </td>
+                    <td class="p-3 font-medium text-slate-300">
+                        ${r.site}
+                    </td>
+                    <td class="p-3 font-mono">
+                        <div class="text-slate-200">${r.formattedTime} <span class="text-[10px] text-slate-500">(${r.eventType})</span></div>
+                        <div class="text-[10px] text-slate-400">Prog: ${r.scheduledTime}</div>
+                    </td>
+                    <td class="p-3">
+                        ${statusBadge}
+                    </td>
+                    <td class="p-3 font-mono text-[11px] text-slate-400">
+                        <i class="fa-solid fa-location-dot text-rose-500 mr-1"></i>${r.coords.lat.toFixed(3)}, ${r.coords.lng.toFixed(3)}
+                    </td>
+                    <td class="p-3 text-right">
+                        <button onclick="openAuditModal('${r.id}')" class="bg-soc-navy hover:bg-blue-800 text-cyan-400 border border-blue-500/30 p-2 rounded-lg text-xs transition-all" title="Auditar Uniforme">
+                            <i class="fa-solid fa-user-check"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function applyFilters() {
+            const search = document.getElementById('fSearch').value.toLowerCase();
+            const regional = document.getElementById('fRegional').value;
+            const status = document.getElementById('fStatus').value;
+
+            const filtered = attendanceRecords.filter(r => {
+                const matchSearch = r.guardName.toLowerCase().includes(search) || r.guardCode.toLowerCase().includes(search);
+                const matchRegional = regional === 'ALL' || r.site === regional;
+                const matchStatus = status === 'ALL' || r.status === status;
+                return matchSearch && matchRegional && matchStatus;
+            });
+
+            renderTable(filtered);
+        }
+
+        // Renderizar Gráficos con Chart.js
+        function renderCharts() {
+            if (chart1) chart1.destroy();
+            if (chart2) chart2.destroy();
+
+            // Gráfico 1: Asistencia vs Atrasos por Regional
+            const siteData = {};
+            REGIONALES.forEach(r => siteData[r] = { onTime: 0, late: 0 });
+
+            attendanceRecords.forEach(rec => {
+                if (!siteData[rec.site]) siteData[rec.site] = { onTime: 0, late: 0 };
+                if (rec.status === 'A tiempo') siteData[rec.site].onTime++;
+                else siteData[rec.site].late++;
+            });
+
+            const ctx1 = document.getElementById('chartByRegional').getContext('2d');
+            chart1 = new Chart(ctx1, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(siteData).map(s => s.split(' ')[0] + ' ' + (s.split(' ')[1] || '')),
+                    datasets: [
+                        { label: 'A Tiempo', data: Object.values(siteData).map(v => v.onTime), backgroundColor: '#10b981', borderRadius: 4 },
+                        { label: 'Atrasados', data: Object.values(siteData).map(v => v.late), backgroundColor: '#ef4444', borderRadius: 4 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: '#94a3b8', font: { size: 10 } }, grid: { display: false } },
+                        y: { ticks: { color: '#94a3b8', stepSize: 1 }, grid: { color: '#1a2b3c' } }
+                    },
+                    plugins: { legend: { labels: { color: '#94a3b8' } } }
+                }
+            });
+
+            // Gráfico 2: Pie de Atrasos
+            const onTimeCount = attendanceRecords.filter(r => r.status === 'A tiempo').length;
+            const mildLate = attendanceRecords.filter(r => r.status === 'Atrasado' && r.delayMinutes <= 20).length;
+            const severeLate = attendanceRecords.filter(r => r.status === 'Atrasado' && r.delayMinutes > 20).length;
+
+            const ctx2 = document.getElementById('chartDelayDistribution').getContext('2d');
+            chart2 = new Chart(ctx2, {
+                type: 'doughnut',
+                data: {
+                    labels: ['A Tiempo', 'Atraso Leve (1-20m)', 'Atraso Severo (>20m)'],
+                    datasets: [{
+                        data: [onTimeCount, mildLate, severeLate],
+                        backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 10 } } } }
+                }
+            });
+        }
+
+
+        // ================= EXPORTACIONES Y MODAL =================
+
+        // 1. Exportar CSV / Excel completo
+        function exportCSV() {
+            if (attendanceRecords.length === 0) {
+                showToast("No hay datos para exportar.", "error"); return;
+            }
+
+            let csv = "\uFEFF"; // BOM UTF-8 para Excel
+            csv += "ID,Codigo_Vigilante,Nombre,Regional_Puesto,Turno,Accion,Hora_Prog,Hora_Real,Estado,Minutos_Atraso,Latitud,Longitud,Notas\n";
+
+            attendanceRecords.forEach(r => {
+                csv += [
+                    r.id,
+                    r.guardCode,
+                    `"${r.guardName}"`,
+                    `"${r.site}"`,
+                    r.shift,
+                    r.eventType,
+                    r.scheduledTime,
+                    r.formattedTime,
+                    r.status,
+                    r.delayMinutes,
+                    r.coords.lat,
+                    r.coords.lng,
+                    `"${r.notes}"`
+                ].join(",") + "\n";
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            saveAs(blob, `SOC_Reporte_Atrasos_Asistencia_${new Date().toISOString().split('T')[0]}.csv`);
+            showToast("Reporte CSV descargado correctamente.", "success");
+        }
+
+        // 2. Descargar Paquete ZIP con todas las Fotos de Evidencia
+        async function exportPhotosZIP() {
+            if (attendanceRecords.length === 0) {
+                showToast("No hay evidencias fotográficas registradas.", "error"); return;
+            }
+
+            showToast("Generando paquete ZIP de fotos de evidencia...", "info");
+            const zip = new JSZip();
+            const imgFolder = zip.folder("Evidencias_Fotograficas_SOC");
+
+            attendanceRecords.forEach((r, idx) => {
+                // Extraer base64 raw
+                if (r.photo && r.photo.includes("base64,")) {
+                    const base64Data = r.photo.split(',')[1];
+                    const fileName = `${r.status}_${r.guardCode}_${r.guardName.replace(/\s+/g, '_')}_${r.id}.jpg`;
+                    imgFolder.file(fileName, base64Data, { base64: true });
+                }
+            });
+
+            const content = await zip.generateAsync({ type: "blob" });
+            saveAs(content, `SOC_Fotos_Evidencia_${new Date().toISOString().split('T')[0]}.zip`);
+            showToast("Descarga de ZIP de fotos completada.", "success");
+        }
+
+        // 3. Exportar JSON Completo (Base64 incluido)
+        function exportJSONBackup() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(attendanceRecords, null, 2));
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", `SOC_Backup_Auditoria_${new Date().toISOString().split('T')[0]}.json`);
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+            showToast("Archivo JSON de auditoría generado.", "success");
+        }
+
+        // Modal de Auditoría
+        function openAuditModal(id) {
+            const r = attendanceRecords.find(rec => rec.id === id);
+            if (!r) return;
+            selectedAuditRecord = r;
+
+            document.getElementById('mImg').src = r.photo;
+            document.getElementById('mGuard').textContent = `${r.guardName} (${r.guardCode})`;
+            document.getElementById('mSite').textContent = r.site;
+            document.getElementById('mTime').textContent = `${r.scheduledTime} vs ${r.formattedTime}`;
+            document.getElementById('mDelay').textContent = r.status === 'Atrasado' ? `+${r.delayMinutes} minutos` : "Sin retraso";
+            document.getElementById('mGeo').textContent = `${r.coords.lat.toFixed(4)}, ${r.coords.lng.toFixed(4)}`;
+
+            const badge = document.getElementById('mBadge');
+            badge.textContent = r.status;
+            badge.className = r.status === 'Atrasado'
+                ? "absolute top-3 right-3 px-2.5 py-1 rounded-full text-xs font-bold uppercase shadow bg-rose-500 text-white"
+                : "absolute top-3 right-3 px-2.5 py-1 rounded-full text-xs font-bold uppercase shadow bg-emerald-500 text-slate-950";
+
+            document.getElementById('auditModal').classList.remove('hidden');
+        }
+
+        function closeAuditModal() {
+            document.getElementById('auditModal').classList.add('hidden');
+        }
+
+        function downloadSinglePhoto() {
+            if (!selectedAuditRecord || !selectedAuditRecord.photo) return;
+            const link = document.createElement('a');
+            link.href = selectedAuditRecord.photo;
+            link.download = `Foto_SOC_${selectedAuditRecord.guardCode}_${selectedAuditRecord.id}.jpg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Toast Helper
+        function showToast(msg, type = "success") {
+            const toast = document.getElementById('toast');
+            const messageEl = document.getElementById('toastMsg');
+            const iconEl = document.getElementById('toastIcon');
+
+            messageEl.textContent = msg;
+
+            if (type === "success") {
+                iconEl.className = "fa-solid fa-circle-check text-emerald-400 text-base";
+            } else if (type === "error") {
+                iconEl.className = "fa-solid fa-circle-xmark text-rose-500 text-base";
+            } else {
+                iconEl.className = "fa-solid fa-circle-info text-cyan-400 text-base";
+            }
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
